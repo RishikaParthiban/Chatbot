@@ -33,7 +33,7 @@ Theme toggle (light/dark).
 🚀 Getting Started
 1. Clone Repo
 
-git clone https://github.com/yourusername/cognify-chatbot.git
+git clone https://github.com/RishikaParthiban/Chatbot.git
 
 cd cognify-chatbot
 
