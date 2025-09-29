@@ -1,53 +1,67 @@
-import os
-import json
-from PyPDF2 import PdfReader
-from sentence_transformers import SentenceTransformer
+# rag_pipeline/pipeline.py
+import json, time, urllib.request
 import chromadb
+from sentence_transformers import SentenceTransformer
+from groundx import GroundX, Document
 import google.generativeai as genai
+import os
 
-# ---------------- Embedding & Vector DB ----------------
+# --- Global setup ---
 EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
 CHROMA_CLIENT = chromadb.PersistentClient(path="xray_db")
 COLLECTION = CHROMA_CLIENT.get_or_create_collection(name="xray_chunks")
 
-# ---------------- Gemini LLM Setup ----------------
-GEN_API_KEY = "AIzaSyAPteCJMtCZBCP4QJbfmfksFk3yEoG1Dt0"
-genai.configure(api_key=GEN_API_KEY)
+# Configure Gemini client
+genai.configure(api_key=os.getenv("GEMINI_API_KEY", "AIzaSyAPteCJMtCZBCP4QJbfmfksFk3yEoG1Dt0"))
 GEMINI_MODEL = genai.GenerativeModel("gemini-1.5-flash")
 
-# ---------------- PDF Parsing ----------------
-def parse_pdf(file_path: str, json_out="parsed_pdf.json"):
-    reader = PdfReader(file_path)
-    chunks = []
+# GroundX client
+GROUNDX_CLIENT = GroundX(api_key=os.getenv("GROUNDX_API_KEY", "16ec4ba5-f166-40d6-9d12-40f144206d35"))
 
-    for i, page in enumerate(reader.pages):
-        text = page.extract_text()
-        if not text:
-            continue
-        chunk = {
-            "chunkId": f"page_{i+1}",
-            "pageNumbers": [i + 1],
-            "text": text.strip(),
-            "sectionSummary": ""
-        }
-        chunks.append(chunk)
 
-    data = {"chunks": chunks}
-    with open(json_out, "w", encoding="utf-8") as f:
+def parse_and_ingest(file_path: str, bucket_name="parsed_documents_bucket"):
+    """Parse a PDF with GroundX and save parsed_xray.json"""
+    bucket_resp = GROUNDX_CLIENT.buckets.create(name=bucket_name)
+    bucket_id = bucket_resp.bucket.bucket_id
+
+    ingest_resp = GROUNDX_CLIENT.ingest(
+        documents=[Document(
+            bucket_id=bucket_id,
+            file_name=os.path.basename(file_path),
+            file_path=file_path,
+            file_type="pdf"
+        )]
+    )
+    process_id = ingest_resp.ingest.process_id
+
+    # Poll until complete
+    while True:
+        status_resp = GROUNDX_CLIENT.documents.get_processing_status_by_id(process_id=process_id)
+        status = status_resp.ingest.status.lower()
+        if status in ("complete", "cancelled", "error"):
+            break
+        time.sleep(3)
+
+    if status == "error":
+        raise RuntimeError("❌ Error ingesting document")
+
+    # Lookup parsed doc
+    doc_list = GROUNDX_CLIENT.documents.lookup(id=bucket_id)
+    if not doc_list.documents:
+        raise RuntimeError("❌ No documents returned by GroundX")
+
+    xray_url = doc_list.documents[0].xray_url
+    with urllib.request.urlopen(xray_url) as url:
+        data = json.loads(url.read().decode())
+
+    with open("parsed_xray.json", "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-    return json_out
+    return "parsed_xray.json"
 
-# ---------------- Store in Vector DB ----------------
-def store_in_vector_db(json_path="parsed_pdf.json"):
-    """Embed chunks and store in ChromaDB after deleting old data"""
-    # Delete all existing documents
-    try:
-        COLLECTION.delete(where={"page": {"$gte": 0}})
-    except Exception as e:
-        print(f"Warning: could not delete previous data: {e}")
 
-    # Load new PDF chunks
+def store_in_vector_db(json_path="parsed_xray.json"):
+    """Chunk parsed JSON, embed, and store in ChromaDB"""
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -71,37 +85,33 @@ def store_in_vector_db(json_path="parsed_pdf.json"):
     return len(texts)
 
 
-# ---------------- Retrieve Relevant Chunks ----------------
 def retrieve(query: str, n_results=5):
+    """Search vector DB for relevant chunks"""
     embedding = EMBED_MODEL.encode(query).tolist()
     results = COLLECTION.query(query_embeddings=[embedding], n_results=n_results)
     return results
 
-# ---------------- Generate Answer using Gemini ----------------
+
 def generate_answer(query: str, results):
+    """Generate final answer with Gemini"""
     documents = results.get("documents", [[]])
     if not documents or not documents[0]:
-        return "No relevant context found."
+        return "No relevant context found in documents."
 
     context_texts = documents[0]
     context = "\n\n".join(context_texts)
 
     prompt = f"""
-You are an AI assistant. Use the following context to answer the question.
+    You are an AI assistant. Use the following context to answer the question.
 
-Context:
-{context}
+    Context:
+    {context}
 
-Question:
-{query}
+    Question:
+    {query}
 
-Answer clearly and concisely.
-"""
+    Answer in a clear, concise way.
+    """
 
-    try:
-        response = GEMINI_MODEL.generate_content(prompt)
-        answer_text = response.text if hasattr(response, "text") else str(response)
-    except Exception as e:
-        answer_text = f"❌ LLM Error: {str(e)}"
-
-    return answer_text
+    response = GEMINI_MODEL.generate_content(prompt)
+    return response.text
