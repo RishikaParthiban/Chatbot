@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cognify Chatbot UI</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-theme="light">
+
+  <div class="sidebar">
+    <h2>
+      <img src="/static/chatbot.jpg" alt="Cognify Logo">
+      Cognify
+    </h2>
+    <button id="new-chat-btn">New chat</button>
+    <div id="chat-list"></div>
+
+    <div class="theme-toggle-container">
+      <span>Theme</span>
+      <div id="theme-toggle" class="toggle-switch">
+        <div class="toggle-circle">🌙</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <h1>Docs at Your Fingertips</h1>
+    <div class="input-container">
+      <input type="text" id="user-input" placeholder="Your doc detective awaits…">
+      <input type="file" id="file-upload">
+      <label for="file-upload">📁</label>
+    </div>
+
+    <div class="chat-box" id="chat-box"></div>
+  </div>
+
+  <script>
+    const newChatBtn = document.getElementById('new-chat-btn');
+    const chatBox = document.getElementById('chat-box');
+    const themeToggle = document.getElementById('theme-toggle');
+    const body = document.body;
+    const toggleCircle = themeToggle.querySelector('.toggle-circle');
+    const fileUpload = document.getElementById('file-upload');
+    const userInput = document.getElementById('user-input');
+    const API_BASE = "http://127.0.0.1:8000";
+
+    // Initialize toggle icon
+    toggleCircle.textContent = body.dataset.theme === 'light' ? '🌙' : '☀';
+
+    // New chat button
+    newChatBtn.addEventListener('click', () => {
+      chatBox.innerHTML = "";
+    });
+
+    // Theme toggle
+    themeToggle.addEventListener('click', () => {
+      themeToggle.classList.toggle('on');
+      if (body.dataset.theme === 'light') {
+        body.dataset.theme = 'dark';
+        toggleCircle.textContent = '☀';
+      } else {
+        body.dataset.theme = 'light';
+        toggleCircle.textContent = '🌙';
+      }
+    });
+
+    // File upload
+    fileUpload.addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      addMessage("bot", "Uploading and parsing file…");
+
+      try {
+        const response = await fetch(${API_BASE}/upload, { method: "POST", body: formData });
+        const data = await response.json();
+        addMessage("bot", data.message);
+      } catch (error) {
+        addMessage("bot", "❌ Upload failed: " + error.message);
+      }
+    });
+
+    // Ask question
+    userInput.addEventListener("keypress", async (event) => {
+      if (event.key === "Enter") {
+        const query = userInput.value.trim();
+        if (!query) return;
+
+        addMessage("user", query);
+        userInput.value = "";
+
+        const formData = new FormData();
+        formData.append("query", query);
+
+        addMessage("bot", "Fetching answer…");
+
+        try {
+          const response = await fetch(${API_BASE}/ask, { method: "POST", body: formData });
+          const data = await response.json();
+          addMessage("bot", data.answer);
+        } catch (error) {
+          addMessage("bot", "❌ Failed to get answer: " + error.message);
+        }
+      }
+    });
+
+    // Add messages
+    function addMessage(sender, text) {
+      const msg = document.createElement("div");
+      msg.className = chat-msg ${sender};
+      msg.textContent = text;
+      chatBox.appendChild(msg);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+  </script>
+
+</body>
+</html>
