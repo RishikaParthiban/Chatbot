@@ -12,7 +12,7 @@ CHROMA_CLIENT = chromadb.PersistentClient(path="xray_db")
 COLLECTION = CHROMA_CLIENT.get_or_create_collection(name="xray_chunks")
 
 # Configure Gemini client
-genai.configure(api_key=os.getenv("GEMINI_API_KEY", "AIzaSyAPteCJMtCZBCP4QJbfmfksFk3yEoG1Dt0"))
+genai.configure(api_key=os.getenv("GEMINI_API_KEY", "GEMINI_API_KEY"))
 GEMINI_MODEL = genai.GenerativeModel("gemini-1.5-flash")
 
 # GroundX client
