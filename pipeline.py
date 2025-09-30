@@ -16,7 +16,7 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY", "GEMINI_API_KEY"))
 GEMINI_MODEL = genai.GenerativeModel("gemini-1.5-flash")
 
 # GroundX client
-GROUNDX_CLIENT = GroundX(api_key=os.getenv("GROUNDX_API_KEY", "16ec4ba5-f166-40d6-9d12-40f144206d35"))
+GROUNDX_CLIENT = GroundX(api_key=os.getenv("GROUNDX_API_KEY", "GROUNDX_API_KEY"))
 
 
 def parse_and_ingest(file_path: str, bucket_name="parsed_documents_bucket"):
